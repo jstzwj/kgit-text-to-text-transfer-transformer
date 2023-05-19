@@ -96,8 +96,8 @@ import tensorflow_datasets as tfds
 import torch
 import torch.utils.tensorboard
 
-CHECKPOINT_FILE_FORMAT = "model-{}.checkpoint"
-
+# CHECKPOINT_FILE_FORMAT = "model-{}.checkpoint"
+CHECKPOINT_FILE_FORMAT = "model.ckpt-{}"
 
 def tokens_to_batches(dataset,
                       sequence_length,
