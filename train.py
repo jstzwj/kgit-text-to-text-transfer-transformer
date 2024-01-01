@@ -14,7 +14,7 @@ else:
 import tasks_kbqat
 model = t5.models.HfPyTorchModel(
     "t5-large", 
-    "/data/wangjun/github/kbqat/models/unifiedqa-v2-t5-large-1363200/", 
+    "/data/xiahan/github/kbqat/models/unifiedqa-v2-t5-large-1363200/", 
     device
 )
 

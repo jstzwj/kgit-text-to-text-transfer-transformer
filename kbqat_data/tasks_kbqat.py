@@ -72,6 +72,10 @@ def postprocessor_two_column(answer, example=None, is_target=False):
 
 for task in [
     "kr1",
+    "kr2",
+    "kr3",
+    "kr4"
+
 ]:
     t5.data.set_tfds_data_dir_override(DATA_DIR + task)
     t5.data.TaskRegistry.add(

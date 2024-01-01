@@ -85,6 +85,8 @@ import os
 import re
 import time
 
+from tqdm import tqdm
+
 from absl import logging
 import mesh_tensorflow.transformer.dataset as transformer_dataset
 import seqio
@@ -95,9 +97,15 @@ import tensorflow.compat.v1 as tf
 import tensorflow_datasets as tfds
 import torch
 import torch.utils.tensorboard
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 # CHECKPOINT_FILE_FORMAT = "model-{}.checkpoint"
 CHECKPOINT_FILE_FORMAT = "model.ckpt-{}"
+
+def remove_prefix(text, prefix):
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    return text
 
 def tokens_to_batches(dataset,
                       sequence_length,
@@ -207,8 +215,9 @@ class HfPyTorchModel(T5Model):
     self._writer = torch.utils.tensorboard.writer.SummaryWriter(model_dir)
     self._model_dir = model_dir
     self._device = device
-    if self._device.type == "cuda":
-      self._model.cuda()
+    # if self._device.type == "cuda":
+    #   self._model.cuda()
+    self._model = self._model.to(self._device)
     self._step = 0
     self.load_latest_checkpoint()
     self.to_tensor = functools.partial(
@@ -242,7 +251,12 @@ class HfPyTorchModel(T5Model):
     model_dir = model_dir or self._model_dir
     path = os.path.join(model_dir, CHECKPOINT_FILE_FORMAT.format(step))
     logging.info("Loading from %s", path)
-    self._model.load_state_dict(torch.load(path))
+    states = torch.load(path)
+    if isinstance(self._model, DDP):
+      print("ddp model.......")
+      self._model.load_state_dict({"module." + k: v for k, v in states.items()})
+    else:
+      self._model.load_state_dict({remove_prefix(k, "module."): v for k, v in states.items()})
     self._step = step
 
   def get_all_checkpoint_steps(self, model_dir=None):
@@ -330,7 +344,7 @@ class HfPyTorchModel(T5Model):
       learning_rate_scheduler = learning_rate_scheduler(optimizer)
 
     now = time.time()
-    for train_step, batch in enumerate(itertools.islice(ds, steps)):
+    for train_step, batch in enumerate(tqdm(itertools.islice(ds, steps), total=steps)):
 
       if not train_step % save_steps:
         # TODO(craffel): Consider saving optimizer and scheduler state.
@@ -516,12 +530,15 @@ class HfPyTorchModel(T5Model):
         lambda x: {"inputs": tf.cast(vocabs["inputs"].encode_tf(x), tf.int64)},
         num_parallel_calls=tf.data.experimental.AUTOTUNE,
     )
+
+    total_num = sum(dataset.map(lambda x: 1).as_numpy_iterator())
+
     dataset = tokens_to_batches(
         dataset, sequence_length, batch_size, ["inputs"]
     )
 
     predictions = []
-    for batch in dataset:
+    for batch in tqdm(dataset, total=total_num//batch_size):
       predicted_tokens = self._model.generate(
           input_ids=self.to_tensor(batch["inputs"]), **generate_kwargs
       )
